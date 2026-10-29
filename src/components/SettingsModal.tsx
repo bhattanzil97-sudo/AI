@@ -122,11 +122,10 @@ export function SettingsModal({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all whitespace-nowrap ${
-                  active
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all whitespace-nowrap ${active
                     ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs'
                     : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
@@ -148,11 +147,10 @@ export function SettingsModal({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleSave({ defaultMode: 'online' })}
-                    className={`p-3 rounded-2xl border text-left transition-all ${
-                      settings.defaultMode === 'online'
+                    className={`p-3 rounded-2xl border text-left transition-all ${settings.defaultMode === 'online'
                         ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300'
                         : 'border-gray-200 dark:border-slate-800 text-gray-700 dark:text-gray-300'
-                    }`}
+                      }`}
                   >
                     <div className="font-semibold text-xs flex items-center gap-1.5 mb-1">
                       <Globe className="w-3.5 h-3.5 text-blue-500" /> Online Mode
@@ -164,11 +162,10 @@ export function SettingsModal({
 
                   <button
                     onClick={() => handleSave({ defaultMode: 'offline' })}
-                    className={`p-3 rounded-2xl border text-left transition-all ${
-                      settings.defaultMode === 'offline'
+                    className={`p-3 rounded-2xl border text-left transition-all ${settings.defaultMode === 'offline'
                         ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300'
                         : 'border-gray-200 dark:border-slate-800 text-gray-700 dark:text-gray-300'
-                    }`}
+                      }`}
                   >
                     <div className="font-semibold text-xs flex items-center gap-1.5 mb-1">
                       <Laptop className="w-3.5 h-3.5 text-emerald-500" /> Offline Mode
@@ -291,11 +288,10 @@ export function SettingsModal({
                     <div
                       key={m.id}
                       onClick={() => handleSave({ onlineModel: m.id })}
-                      className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                        settings.onlineModel === m.id
+                      className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${settings.onlineModel === m.id
                           ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
                           : 'border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/40'
-                      }`}
+                        }`}
                     >
                       <div>
                         <div className="font-semibold text-xs text-gray-900 dark:text-white flex items-center gap-2">
@@ -345,11 +341,10 @@ export function SettingsModal({
                 </div>
                 {ollamaTestResult && (
                   <p
-                    className={`text-[11px] font-medium ${
-                      ollamaTestResult.startsWith('Connected')
+                    className={`text-[11px] font-medium ${ollamaTestResult.startsWith('Connected')
                         ? 'text-emerald-600'
                         : 'text-rose-500'
-                    }`}
+                      }`}
                   >
                     {ollamaTestResult}
                   </p>
@@ -377,11 +372,10 @@ export function SettingsModal({
                       <div
                         key={m.name}
                         onClick={() => handleSave({ offlineModel: m.name })}
-                        className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                          settings.offlineModel === m.name
+                        className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${settings.offlineModel === m.name
                             ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30'
                             : 'border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/40'
-                        }`}
+                          }`}
                       >
                         <div>
                           <div className="font-semibold text-xs text-gray-900 dark:text-white flex items-center gap-2">

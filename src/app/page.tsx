@@ -49,6 +49,7 @@ export default function ChatAIPage() {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const skipLoadForConvRef = useRef<string | null>(null);
 
   // --- Initial Mount & Load ---
   useEffect(() => {
@@ -172,15 +173,43 @@ export default function ChatAIPage() {
 
   // Load Messages when active conversation changes
   useEffect(() => {
-    if (activeConversationId) {
-      storage.getMessages(activeConversationId).then((msgs) => {
+    if (!activeConversationId) {
+      setMessages([]);
+      return;
+    }
+
+    // Prevent overwriting messages if this conversation was just created in handleSendMessage
+    if (skipLoadForConvRef.current === activeConversationId) {
+      skipLoadForConvRef.current = null;
+      return;
+    }
+
+    // Do not wipe out active streaming state
+    if (isStreaming) {
+      return;
+    }
+
+    let isMounted = true;
+    storage.getMessages(activeConversationId).then((msgs) => {
+      if (isMounted) {
         setMessages(msgs);
         scrollToBottom();
-      });
-    } else {
-      setMessages([]);
-    }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, [activeConversationId]);
+
+  // Select conversation safely
+  const handleSelectConversation = (id: string) => {
+    if (id === activeConversationId) return;
+    if (isStreaming) {
+      handleStopStreaming();
+    }
+    setActiveConversationId(id);
+  };
 
   // Scroll to bottom on updates
   const scrollToBottom = () => {
@@ -307,6 +336,9 @@ export default function ChatAIPage() {
       await storage.saveConversation(newConv);
       currentConvs.unshift(newConv);
       setConversations(currentConvs);
+
+      // Signal to effect to skip reloading from disk for this newly initiated conversation
+      skipLoadForConvRef.current = convId;
       setActiveConversationId(convId);
     } else {
       // Update existing conversation timestamp
@@ -340,12 +372,6 @@ export default function ChatAIPage() {
 
     await storage.saveMessage(userMessage);
 
-    // Initial messages set
-    const baseHistory = historyOverride || messages;
-    const updatedMessages = [...baseHistory, userMessage];
-    setMessages(updatedMessages);
-    scrollToBottom();
-
     // Prepare assistant placeholder message
     const assistantMessageId = 'msg_' + Date.now().toString(36) + '_a';
     const initialAssistantMessage: Message = {
@@ -359,8 +385,12 @@ export default function ChatAIPage() {
       isStreaming: true,
     };
 
-    setMessages((prev) => [...prev, initialAssistantMessage]);
+    // Atomic update with both user message and assistant placeholder
+    const baseHistory = historyOverride || messages;
+    const updatedMessages = [...baseHistory, userMessage];
+    setMessages([...updatedMessages, initialAssistantMessage]);
     setIsStreaming(true);
+    scrollToBottom();
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -450,13 +480,20 @@ export default function ChatAIPage() {
 
                 if (data.type === 'chunk' && data.content) {
                   accumulatedContent += data.content;
-                  setMessages((prev) =>
-                    prev.map((m) =>
+                  setMessages((prev) => {
+                    const exists = prev.some((m) => m.id === assistantMessageId);
+                    if (!exists) {
+                      return [
+                        ...prev,
+                        { ...initialAssistantMessage, content: accumulatedContent },
+                      ];
+                    }
+                    return prev.map((m) =>
                       m.id === assistantMessageId
                         ? { ...m, content: accumulatedContent }
                         : m
-                    )
-                  );
+                    );
+                  });
                   scrollToBottom();
                 } else if (data.type === 'sources' && data.sources) {
                   accumulatedSources = data.sources;
@@ -487,9 +524,13 @@ export default function ChatAIPage() {
         isStreaming: false,
       };
 
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantMessageId ? finalizedAssistantMessage : m))
-      );
+      setMessages((prev) => {
+        const exists = prev.some((m) => m.id === assistantMessageId);
+        if (!exists) {
+          return [...prev, finalizedAssistantMessage];
+        }
+        return prev.map((m) => (m.id === assistantMessageId ? finalizedAssistantMessage : m));
+      });
       await storage.saveMessage(finalizedAssistantMessage);
 
       // Auto read if enabled
@@ -570,7 +611,7 @@ export default function ChatAIPage() {
       <Sidebar
         conversations={conversations}
         activeId={activeConversationId}
-        onSelectConversation={setActiveConversationId}
+        onSelectConversation={handleSelectConversation}
         onNewChat={handleNewChat}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}

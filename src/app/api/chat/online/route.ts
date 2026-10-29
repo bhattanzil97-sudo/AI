@@ -173,14 +173,14 @@ export async function POST(req: NextRequest) {
     // Strict system prompt enforcing short, precise, direct answers without reasoning monologue
     const conciseDirective = `You are CHAT AI.
 STRICT INSTRUCTIONS:
-1. Answer ONLY what the user asks.
-2. Keep your answer short, clear, direct, and to the point.
+1. Answer ONLY what the user asks. Provide ONLY the specific information requested.
+2. Keep your answer short, clear, direct, accurate, and to the point.
 3. NEVER output internal thought process, reasoning steps, tone analysis, user intent breakdown, or draft options. Output ONLY the final answer.
 4. The length of the answer must match the scope of the question:
    - For greetings (e.g. "hi", "hello"): respond with a single short, friendly sentence.
-   - For specific questions: answer directly without extra background or unsolicited advice.
+   - For specific or factual questions: answer directly in 1-2 concise sentences without preamble or filler.
    - For code: provide only the requested code and minimal necessary explanation.
-5. Do NOT add extra explanations or details unless the user specifically asks for them.`;
+5. Do NOT add extra explanations, background history, or unsolicited details unless the user specifically asks for them.`;
 
     // Try candidate models
     for (const candidate of candidates) {
@@ -188,7 +188,7 @@ STRICT INSTRUCTIONS:
         const modelOptions: any = {
           model: candidate.modelName,
           generationConfig: {
-            temperature: 0.3, // Direct, focused, concise output
+            temperature: 0.2, // Direct, focused, concise output
           },
           systemInstruction: conciseDirective,
         };
@@ -206,7 +206,7 @@ STRICT INSTRUCTIONS:
         const effectiveContents = JSON.parse(JSON.stringify(contents));
         const lastUser = [...effectiveContents].reverse().find((c: any) => c.role === 'user');
         if (lastUser && lastUser.parts?.[0]?.text) {
-          lastUser.parts[0].text = `[Instruction: Respond directly, concisely, and to the point based ONLY on what is asked. Do NOT output reasoning, analysis, tone, intent, or draft options. Answer length should match question length.]\n\n${lastUser.parts[0].text}`;
+          lastUser.parts[0].text = `[Rule: Give ONLY a short, direct answer to what is asked. Do not add extra explanations or details.]\n\n${lastUser.parts[0].text}`;
         }
 
         resultStream = await generativeModel.generateContentStream({ contents: effectiveContents });
