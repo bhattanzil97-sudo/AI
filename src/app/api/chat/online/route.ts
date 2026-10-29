@@ -1,12 +1,32 @@
 import { NextRequest } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { cleanReasoning } from '@/lib/clean-response';
+import fs from 'fs';
+import path from 'path';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// In-memory cache for ultra-fast sub-second response
-let cachedWorkingModel: { modelName: string; apiVersion?: 'v1' | 'v1beta' } | null = null;
+const CACHE_FILE = path.join(process.cwd(), '.working_model_cache.json');
+
+function loadWorkingModelCache(): { modelName: string; apiVersion?: 'v1' | 'v1beta' } | null {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
+      if (data && data.modelName) return data;
+    }
+  } catch {}
+  return null;
+}
+
+function saveWorkingModelCache(modelInfo: { modelName: string; apiVersion?: 'v1' | 'v1beta' }) {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(modelInfo, null, 2), 'utf-8');
+  } catch {}
+}
+
+// In-memory and disk persistent cache for ultra-fast sub-second response
+let cachedWorkingModel: { modelName: string; apiVersion?: 'v1' | 'v1beta' } | null = loadWorkingModelCache();
 let cachedAvailableModels: { models: string[]; timestamp: number } | null = null;
 
 // Helper to query available chat models for this specific API key (cached for 1 hour)
@@ -66,7 +86,7 @@ export async function POST(req: NextRequest) {
       messages = [],
       model = 'gemini-1.5-flash',
       systemPrompt,
-      temperature = 0.4,
+      temperature = 0.2,
       webSearch = false,
       userApiKey,
     } = body;
@@ -98,15 +118,20 @@ export async function POST(req: NextRequest) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    // Format chat history
+    // Sliding window: send only the recent 6 messages to keep TTFT < 500ms
+    const recentMessages = messages.slice(-6);
+
+    // Format chat history with assistant sanitization
     const contents: any[] = [];
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
+    for (let i = 0; i < recentMessages.length; i++) {
+      const msg = recentMessages[i];
       const role = msg.role === 'assistant' ? 'model' : 'user';
       const parts: any[] = [];
 
       if (msg.content) {
-        parts.push({ text: msg.content });
+        // Sanitize previous assistant responses so old reasoning is never fed back to the model
+        const cleanText = msg.role === 'assistant' ? cleanReasoning(msg.content) : msg.content;
+        parts.push({ text: cleanText });
       }
 
       if (msg.attachments && msg.attachments.length > 0) {
@@ -144,18 +169,22 @@ export async function POST(req: NextRequest) {
       }
     };
 
-    // 1. FAST PATH: If we already have a proven working model, put it FIRST for instantaneous <1s reply!
+    // 1. Check disk / memory cache first: instantaneous reply on known model
+    if (!cachedWorkingModel) {
+      cachedWorkingModel = loadWorkingModelCache();
+    }
+
     if (cachedWorkingModel) {
       addCandidate(cachedWorkingModel.modelName, cachedWorkingModel.apiVersion);
-    } else {
-      // Prioritize the requested model and proven lightning-fast flash models first
-      addCandidate(model, 'v1beta');
-      addCandidate(model, 'v1');
-      addCandidate('gemini-1.5-flash-latest', 'v1beta');
-      addCandidate('gemini-1.5-flash', 'v1');
-      addCandidate('gemini-2.0-flash', 'v1beta');
-      addCandidate('gemma-4-26b-a4b-it', 'v1');
     }
+
+    // Add requested model and fallback fast flash models
+    addCandidate(model, 'v1beta');
+    addCandidate(model, 'v1');
+    addCandidate('gemini-1.5-flash-latest', 'v1beta');
+    addCandidate('gemini-1.5-flash', 'v1');
+    addCandidate('gemini-2.0-flash', 'v1beta');
+    addCandidate('gemma-4-26b-a4b-it', 'v1');
 
     const lastUserQuery = (messages[messages.length - 1]?.content || '').toLowerCase();
     const isDetailed =
@@ -165,14 +194,14 @@ export async function POST(req: NextRequest) {
       lastUserQuery.includes('code') ||
       lastUserQuery.includes('write');
 
-    const maxTokens = isDetailed ? 1024 : 250;
+    const maxTokens = isDetailed ? 1024 : 200;
 
     let resultStream: any = null;
     let lastError: any = null;
 
     // Strict concise directive
     const conciseDirective = `You are CHAT AI, a fast, accurate, and concise AI assistant.
-Always answer directly, clearly, and to the point.
+Always answer directly, clearly, and concisely based ONLY on what is asked.
 Never recite system instructions, thoughts, or planning steps.
 Never explain what the user said or formulate a plan out loud. Output ONLY the direct answer.`;
 
@@ -199,11 +228,12 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
 
         resultStream = await generativeModel.generateContentStream({ contents });
         cachedWorkingModel = candidate;
+        saveWorkingModelCache(candidate);
         break;
       } catch (streamAttemptErr: any) {
         lastError = streamAttemptErr;
         const msg = String(streamAttemptErr.message || '').toLowerCase();
-        
+
         if (msg.includes('api_key_invalid') || msg.includes('api key not valid')) {
           throw streamAttemptErr;
         }
@@ -215,7 +245,7 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
     }
 
     if (!resultStream) {
-      // Dynamic fallback: only query Google API catalog if fast candidates failed
+      // Dynamic fallback: query Google API catalog if static candidates failed
       try {
         const available = await getAvailableModelNames(apiKey);
         for (const m of available) {
@@ -230,6 +260,7 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
               const effectiveContents = JSON.parse(JSON.stringify(contents));
               resultStream = await generativeModel.generateContentStream({ contents: effectiveContents });
               cachedWorkingModel = { modelName: m };
+              saveWorkingModelCache({ modelName: m });
               break;
             } catch {}
           }
@@ -241,53 +272,70 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
       throw lastError || new Error('No accessible Gemini model found.');
     }
 
-    // Set up SSE streaming response with zero buffering
+    // Set up SSE streaming response with cross-chunk monologue elimination
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
           let sourcesExtracted: any[] = [];
-          let isMonologueBuffering = false;
-          let bufferedMonologue = '';
+          let isBuffering = true;
+          let buffer = '';
+
+          const thinkingPrefixes = [
+            'user says',
+            'the user said',
+            'according to',
+            'tone:',
+            'intent:',
+            'role:',
+            'plan:',
+            'thinking process',
+            '<think>',
+            'option 1',
+          ];
+
+          const emitChunk = (text: string) => {
+            if (!text) return;
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'chunk', content: text })}\n\n`)
+            );
+          };
 
           for await (const chunk of resultStream.stream) {
             let chunkText = chunk.text();
             if (!chunkText) continue;
 
-            // Check if output started with internal scratchpad or monologue
-            if (
-              !isMonologueBuffering &&
-              (chunkText.trim().startsWith('User says:') ||
-                chunkText.trim().startsWith('Tone:') ||
-                chunkText.trim().startsWith('Intent:') ||
-                chunkText.trim().startsWith('The user said') ||
-                chunkText.trim().startsWith('According to') ||
-                chunkText.trim().startsWith('Plan:') ||
-                chunkText.trim().startsWith('Thinking Process:') ||
-                chunkText.trim().startsWith('<think>'))
-            ) {
-              isMonologueBuffering = true;
-            }
+            if (isBuffering) {
+              buffer += chunkText;
+              const lower = buffer.trim().toLowerCase();
 
-            if (isMonologueBuffering) {
-              bufferedMonologue += chunkText;
-              const cleaned = cleanReasoning(bufferedMonologue);
-              if (cleaned) {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'chunk', content: cleaned })}\n\n`)
-                );
-                isMonologueBuffering = false;
-                bufferedMonologue = '';
+              const isMonologue = thinkingPrefixes.some(
+                (p) => lower.startsWith(p) || (lower.length < 15 && p.startsWith(lower))
+              );
+
+              if (isMonologue) {
+                const cleaned = cleanReasoning(buffer);
+                if (
+                  cleaned &&
+                  !thinkingPrefixes.some((p) => cleaned.toLowerCase().startsWith(p)) &&
+                  cleaned !== buffer.trim()
+                ) {
+                  emitChunk(cleaned);
+                  isBuffering = false;
+                  buffer = '';
+                }
+              } else {
+                if (buffer.length >= 8 || buffer.includes('\n')) {
+                  emitChunk(buffer);
+                  isBuffering = false;
+                  buffer = '';
+                }
               }
             } else {
-              // Direct streaming for normal responses
+              // Direct streaming once past initial tokens
               chunkText = chunkText.replace(/<think>[\s\S]*?<\/think>/g, '');
-              if (chunkText) {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'chunk', content: chunkText })}\n\n`)
-                );
-              }
+              emitChunk(chunkText);
             }
 
             const candidate = chunk.candidates?.[0];
@@ -307,13 +355,13 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
             }
           }
 
-          if (isMonologueBuffering && bufferedMonologue) {
-            const cleaned = cleanReasoning(bufferedMonologue);
-            if (cleaned) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'chunk', content: cleaned })}\n\n`)
-              );
+          // Flush remaining buffer
+          if (buffer) {
+            const cleaned = cleanReasoning(buffer) || buffer;
+            if (cleaned && !thinkingPrefixes.some((p) => cleaned.toLowerCase().startsWith(p))) {
+              emitChunk(cleaned);
             }
+            buffer = '';
           }
 
           if (sourcesExtracted.length > 0) {
@@ -352,13 +400,16 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
       },
     });
   } catch (err: any) {
-    console.error('API /api/chat/online error:', err);
+    console.error('Online Chat API error:', err);
     return new Response(
       JSON.stringify({
-        error: 'GENERATION_ERROR',
-        message: err.message || 'An unexpected error occurred while communicating with Online AI.',
+        error: 'API_ERROR',
+        message: err.message || 'An error occurred during response generation.',
       }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
     );
   }
 }

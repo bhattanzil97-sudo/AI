@@ -428,7 +428,7 @@ export default function ChatAIPage() {
       const payload: any = {
         messages: updatedMessages.map((m) => ({
           role: m.role,
-          content: m.content,
+          content: m.role === 'assistant' ? cleanReasoning(m.content) : m.content,
           attachments: m.attachments,
         })),
         model: activeModel,

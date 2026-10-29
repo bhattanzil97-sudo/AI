@@ -14,45 +14,43 @@ export function cleanReasoning(text: string): string {
 
   // 2. Remove "Thinking Process: ..." blocks
   cleaned = cleaned.replace(
-    /^Thinking Process:[\s\S]*?(?:Final Answer:|Answer:|Conclusion:|\n\n)/gi,
+    /^Thinking Process:[\s\S]*?(?:Final Answer:|Answer:|Conclusion:|\n\n(?=[A-Z0-9]))/gi,
     ''
   );
   cleaned = cleaned.replace(/^(?:Final Answer:|Answer:|Conclusion:)\s*/i, '');
 
   // 3. Remove "The user said... According to the system instructions... Plan:..." monologue
   cleaned = cleaned.replace(
-    /^(?:The user said|According to the system instructions)[\s\S]*?(?:Plan:[^\n\.]*[\.\n]?\s*)/i,
+    /^(?:The user said|User says|According to the system instructions)[\s\S]*?(?:Plan:[\s\S]*?(?:greeting\.|\n\n|(?=[A-Z][a-z]+[!?.]))|(?:\n\n(?=[A-Z])))/i,
     ''
   );
-  cleaned = cleaned.replace(/^Plan:[^\n\.]*[\.\n]?\s*/i, '');
 
-  // 4. Remove "User says: ... Tone: ... Intent: ... Option 1/2/3" scratchpads
-  if (/^(?:User says:|Tone:|Intent:|Role:)/im.test(cleaned)) {
-    // If there is an Option block, grab the final selected answer after the options
-    const optionMatch = cleaned.match(/(?:Option \d[^\n]*\n*)+([\s\S]*)$/i);
-    if (optionMatch && optionMatch[1].trim()) {
-      cleaned = optionMatch[1].trim();
+  // 4. Remove Option 1 / Option 2 / Option 3 blocks and preceding analysis
+  if (/(?:User says:|Tone:|Intent:|Role:|Option \d)/i.test(cleaned)) {
+    // If there is an Option block, the real output is either the last quoted string or text after the last Option
+    const afterOptions = cleaned.replace(/^[\s\S]*?(?:Option \d[^\n]*\n*)+/i, '').trim();
+    if (afterOptions) {
+      cleaned = afterOptions;
     } else {
-      // Look for the last quoted block at the end
-      const quoted = cleaned.match(/"([^"]{2,})"\s*$/);
-      if (quoted) {
-        cleaned = quoted[1].trim();
-      } else {
-        cleaned = cleaned
-          .split('\n')
-          .filter(
-            (line) =>
-              !/^(?:User says:|Tone:|Intent:|Role:|Option \d|Acknowledge|Offer assistance|Maintain)/i.test(
-                line.trim()
-              )
-          )
-          .join('\n')
-          .trim();
+      // Look for the last quoted block
+      const matches = [...cleaned.matchAll(/"([^"]{2,})"/g)];
+      if (matches.length > 0) {
+        cleaned = matches[matches.length - 1][1].trim();
       }
     }
   }
 
-  // 5. Strip wrapping quotes if the whole message was returned inside quotes
+  // 5. Clean any residual Plan: or "Respond with..." fragments
+  cleaned = cleaned.replace(/^(?:Plan:|\s*Plan:)\s*/i, '');
+  cleaned = cleaned.replace(/^Respond with[\s\S]*?(?:greeting\.|answer\.)\s*/i, '');
+
+  // 6. If duplicate greeting occurred (e.g. "Hello! ... Hello! ...")
+  const dupMatch = cleaned.match(/^"([^"]+)"\s*\1$/s);
+  if (dupMatch) {
+    cleaned = dupMatch[1];
+  }
+
+  // 7. Strip wrapping quotes if whole message is quoted
   cleaned = cleaned.trim();
   if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 2) {
     cleaned = cleaned.substring(1, cleaned.length - 1).trim();

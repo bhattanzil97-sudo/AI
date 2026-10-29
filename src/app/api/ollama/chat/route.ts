@@ -19,23 +19,27 @@ export async function POST(req: NextRequest) {
 
     const baseEndpoint = (endpoint || 'http://localhost:11434').replace(/\/$/, '');
 
-    // Format messages for Ollama with strict concise instructions
+    // Format messages for Ollama with clean concise directive
     const formattedMessages: any[] = [];
 
-    const conciseDirective = `You are CHAT AI in Offline Mode, a fast, accurate, and concise AI assistant.
-Always answer directly, clearly, and to the point based ONLY on what is asked.
-Never recite system instructions, thoughts, or planning steps.
-Never explain what the user said or formulate a plan out loud. Output ONLY the direct answer.`;
+    const conciseDirective = `You are CHAT AI, a helpful, fast, and concise assistant.
+Answer directly, clearly, and accurately based ONLY on what is asked.
+Never output thoughts, planning steps, or meta-commentary.
+Output ONLY the direct response.`;
 
     formattedMessages.push({
       role: 'system',
       content: conciseDirective,
     });
 
-    for (const msg of messages) {
+    // Use sliding window of last 6 messages to keep CPU prompt evaluation under 200ms
+    const recentMessages = messages.slice(-6);
+
+    for (const msg of recentMessages) {
       const ollamaMsg: any = {
         role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content || '',
+        // Sanitize any previous assistant responses so old reasoning is never fed back to the model
+        content: msg.role === 'assistant' ? cleanReasoning(msg.content || '') : (msg.content || ''),
       };
 
       if (msg.attachments && msg.attachments.length > 0) {
@@ -93,18 +97,18 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
       lastUserQuery.includes('code') ||
       lastUserQuery.includes('write');
 
-    const maxTokens = isDetailed ? 512 : 150;
+    const maxTokens = isDetailed ? 512 : 128;
 
     const ollamaPayload = {
       model: targetModel,
       messages: formattedMessages,
       stream: true,
-      think: false, // Critical: Disables chain-of-thought/thinking token phase for Qwen/DeepSeek models
+      think: false, // Critical: Disables thinking token generation for Qwen/DeepSeek models
       keep_alive: '24h', // Keep model resident in RAM to eliminate reload delay
       options: {
         temperature: 0.2, // Direct, factual, non-rambling
         num_predict: maxTokens,
-        num_thread: 4,
+        num_thread: 8, // Optimized for AMD Ryzen 7 5700U 8-core CPU
         top_p: 0.9,
       },
     };
@@ -201,13 +205,12 @@ Never explain what the user said or formulate a plan out loud. Output ONLY the d
                     )
                   );
                 } else if (!hasStreamedContent && parsed.message?.thinking) {
-                  // Keep track of thinking internally in case the model only puts answer in thinking
                   accumulatedThinking += parsed.message.thinking;
                 }
 
                 if (parsed.done) {
                   // If the model finished and never output in content, fallback to cleaned thinking
-                  if (!hasStreamedContent && accumulatedThinking) {
+                  if (!hasStreamedContent) {
                     const cleaned = cleanReasoning(accumulatedThinking);
                     if (cleaned) {
                       safeEnqueue(

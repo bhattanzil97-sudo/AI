@@ -24,6 +24,7 @@ yarn-error.log*
 
 # Local environment files
 .env*.local
+.working_model_cache.json
 
 # Vercel
 .vercel
