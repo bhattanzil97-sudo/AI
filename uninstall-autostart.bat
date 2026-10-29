@@ -28,3 +28,4 @@ echo [SUCCESS] Auto-start has been disabled.
 echo ========================================================
 echo.
 pause
+

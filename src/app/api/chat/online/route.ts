@@ -147,25 +147,25 @@ export async function POST(req: NextRequest) {
     // 1. FAST PATH: If we already have a proven working model, put it FIRST for instantaneous <1s reply!
     if (cachedWorkingModel) {
       addCandidate(cachedWorkingModel.modelName, cachedWorkingModel.apiVersion);
+    } else {
+      // Prioritize the requested model and proven lightning-fast flash models first
+      addCandidate(model, 'v1beta');
+      addCandidate(model, 'v1');
+      addCandidate('gemini-1.5-flash-latest', 'v1beta');
+      addCandidate('gemini-1.5-flash', 'v1');
+      addCandidate('gemini-2.0-flash', 'v1beta');
+      addCandidate('gemma-4-26b-a4b-it', 'v1');
     }
 
-    // 2. Discover available models from this user's project
-    const availableChatModels = await getAvailableModelNames(apiKey);
+    const lastUserQuery = (messages[messages.length - 1]?.content || '').toLowerCase();
+    const isDetailed =
+      lastUserQuery.includes('detail') ||
+      lastUserQuery.includes('explain') ||
+      lastUserQuery.includes('step by step') ||
+      lastUserQuery.includes('code') ||
+      lastUserQuery.includes('write');
 
-    for (const m of availableChatModels) {
-      addCandidate(m, 'v1beta');
-      addCandidate(m, 'v1');
-    }
-
-    // 3. Fallback standard names
-    addCandidate('gemma-4-26b-a4b-it', 'v1');
-    addCandidate('gemma-4-26b-a4b-it', 'v1beta');
-    addCandidate('gemini-1.5-flash-latest', 'v1beta');
-    addCandidate('gemini-1.5-flash-001', 'v1beta');
-    addCandidate('gemini-1.5-flash', 'v1');
-    addCandidate('gemini-2.0-flash', 'v1beta');
-    addCandidate('gemini-1.5-pro', 'v1');
-    addCandidate('gemini-pro', 'v1');
+    const maxTokens = isDetailed ? 1024 : 250;
 
     let resultStream: any = null;
     let lastError: any = null;
@@ -189,6 +189,7 @@ STRICT INSTRUCTIONS:
           model: candidate.modelName,
           generationConfig: {
             temperature: 0.2, // Direct, focused, concise output
+            maxOutputTokens: maxTokens,
           },
           systemInstruction: conciseDirective,
         };
@@ -224,6 +225,29 @@ STRICT INSTRUCTIONS:
           cachedWorkingModel = null;
         }
       }
+    }
+
+    if (!resultStream) {
+      // Dynamic fallback: only query Google API catalog if fast candidates failed
+      try {
+        const available = await getAvailableModelNames(apiKey);
+        for (const m of available) {
+          if (!candidates.some((c) => c.modelName === m)) {
+            try {
+              const modelOptions: any = {
+                model: m,
+                generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens },
+                systemInstruction: conciseDirective,
+              };
+              const generativeModel = genAI.getGenerativeModel(modelOptions);
+              const effectiveContents = JSON.parse(JSON.stringify(contents));
+              resultStream = await generativeModel.generateContentStream({ contents: effectiveContents });
+              cachedWorkingModel = { modelName: m };
+              break;
+            } catch {}
+          }
+        }
+      } catch {}
     }
 
     if (!resultStream) {

@@ -50,3 +50,4 @@ echo  * A "CHAT AI" shortcut has also been placed on your Desktop.
 echo ========================================================
 echo.
 pause
+

@@ -50,6 +50,7 @@ export default function ChatAIPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const skipLoadForConvRef = useRef<string | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   // --- Initial Mount & Load ---
   useEffect(() => {
@@ -73,6 +74,16 @@ export default function ChatAIPage() {
 
     // Check Ollama status
     checkOllamaStatus(loadedSettings.ollamaEndpoint);
+
+    // Background warmup for local AI model to eliminate cold-start delay
+    fetch('/api/ollama/warmup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: loadedSettings.ollamaEndpoint,
+        model: loadedSettings.offlineModel || 'qwen3.5:4b',
+      }),
+    }).catch(() => {});
   }, []);
 
   // Theme helper
@@ -132,8 +143,16 @@ export default function ChatAIPage() {
     if (mode === 'online') {
       setActiveModel(settings.onlineModel || 'gemini-1.5-flash');
     } else {
-      // Offline mode: check Ollama
+      // Offline mode: check Ollama & warmup in background
       setIsCheckingOllama(true);
+      fetch('/api/ollama/warmup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: settings.ollamaEndpoint,
+          model: settings.offlineModel || 'qwen3.5:4b',
+        }),
+      }).catch(() => {});
       try {
         const res = await fetch(`/api/ollama/status?endpoint=${encodeURIComponent(settings.ollamaEndpoint)}`);
         const data: OllamaStatus = await res.json();
@@ -211,11 +230,18 @@ export default function ChatAIPage() {
     setActiveConversationId(id);
   };
 
-  // Scroll to bottom on updates
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 50);
+  // High-performance display-rate throttled scroll (smooth 60 FPS streaming)
+  const scrollToBottom = (smooth = false) => {
+    if (scrollRafRef.current !== null) return;
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({
+          behavior: smooth ? 'smooth' : 'auto',
+          block: 'end',
+        });
+      }
+      scrollRafRef.current = null;
+    });
   };
 
   // Start New Chat

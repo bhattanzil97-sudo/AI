@@ -4,6 +4,8 @@ import { cleanReasoning } from '@/lib/clean-response';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+let cachedOllamaModels: { endpoint: string; models: string[]; timestamp: number } | null = null;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -66,32 +68,56 @@ STRICT INSTRUCTIONS:
       lastOllamaUser.content = `[Rule: Give ONLY a short, direct answer to what is asked. Do not add extra explanations or details.]\n\n${lastOllamaUser.content}`;
     }
 
-    // Check installed models in Ollama to ensure we pick an actually installed model
+    // Check installed models in Ollama with in-memory caching to avoid round-trip on every message
     let targetModel = model;
-    try {
-      const tagsRes = await fetch(`${baseEndpoint}/api/tags`, {
-        signal: AbortSignal.timeout(1000),
-      });
-      if (tagsRes.ok) {
-        const tagsData = await tagsRes.json();
-        const installed: string[] = (tagsData.models || []).map((m: any) => m.name);
-        if (installed.length > 0) {
-          if (!installed.includes(targetModel)) {
-            const match = installed.find((m) => m.startsWith(targetModel.split(':')[0]));
-            targetModel = match || installed[0];
-          }
+    const now = Date.now();
+    let installed: string[] = [];
+
+    if (
+      cachedOllamaModels &&
+      cachedOllamaModels.endpoint === baseEndpoint &&
+      now - cachedOllamaModels.timestamp < 60000
+    ) {
+      installed = cachedOllamaModels.models;
+    } else {
+      try {
+        const tagsRes = await fetch(`${baseEndpoint}/api/tags`, {
+          signal: AbortSignal.timeout(600),
+        });
+        if (tagsRes.ok) {
+          const tagsData = await tagsRes.json();
+          installed = (tagsData.models || []).map((m: any) => m.name);
+          cachedOllamaModels = { endpoint: baseEndpoint, models: installed, timestamp: now };
         }
-      }
-    } catch {}
+      } catch {}
+    }
+
+    if (installed.length > 0 && !installed.includes(targetModel)) {
+      const match = installed.find((m) => m.startsWith(targetModel.split(':')[0]));
+      targetModel = match || installed[0];
+    }
+
+    const lastUserQuery = (messages[messages.length - 1]?.content || '').toLowerCase();
+    const isDetailed =
+      lastUserQuery.includes('detail') ||
+      lastUserQuery.includes('explain') ||
+      lastUserQuery.includes('step by step') ||
+      lastUserQuery.includes('code') ||
+      lastUserQuery.includes('write');
+
+    const maxTokens = isDetailed ? 512 : 150;
 
     const ollamaPayload = {
       model: targetModel,
       messages: formattedMessages,
       stream: true,
       think: false, // Critical: Disables chain-of-thought/thinking token phase for Qwen/DeepSeek models
+      keep_alive: '24h', // Keep model resident in RAM to eliminate reload delay
       options: {
         temperature: 0.2, // Direct, factual, non-rambling
-        num_predict: 256,
+        num_predict: maxTokens,
+        num_thread: 4,
+        top_p: 0.9,
       },
     };
 
