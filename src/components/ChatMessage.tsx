@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 import { Message } from '@/types/chat';
+import { cleanReasoning } from '@/lib/clean-response';
 
 interface ChatMessageProps {
   message: Message;
@@ -43,9 +44,10 @@ export function ChatMessage({
   const [editContent, setEditContent] = useState(message.content);
 
   const isUser = message.role === 'user';
+  const displayContent = isUser ? message.content : cleanReasoning(message.content);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
+    navigator.clipboard.writeText(displayContent || message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -233,7 +235,7 @@ export function ChatMessage({
                     </div>
                   )}
                 </div>
-              ) : message.content ? (
+              ) : displayContent ? (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeHighlight]}
@@ -316,7 +318,7 @@ export function ChatMessage({
                     },
                   }}
                 >
-                  {message.content}
+                  {displayContent}
                 </ReactMarkdown>
               ) : isStreaming ? (
                 <div className="flex items-center gap-2.5 py-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -384,7 +386,7 @@ export function ChatMessage({
             {/* Read aloud (TTS) button */}
             {onSpeak && !isUser && (
               <button
-                onClick={() => onSpeak(message.content)}
+                onClick={() => onSpeak(displayContent || message.content)}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-200/60 dark:hover:bg-slate-800 transition-colors text-xs"
                 title={isSpeaking ? 'Stop speech' : 'Read aloud'}
               >

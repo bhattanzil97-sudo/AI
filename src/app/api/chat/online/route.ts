@@ -170,17 +170,11 @@ export async function POST(req: NextRequest) {
     let resultStream: any = null;
     let lastError: any = null;
 
-    // Strict system prompt enforcing short, precise, direct answers without reasoning monologue
-    const conciseDirective = `You are CHAT AI.
-STRICT INSTRUCTIONS:
-1. Answer ONLY what the user asks. Provide ONLY the specific information requested.
-2. Keep your answer short, clear, direct, accurate, and to the point.
-3. NEVER output internal thought process, reasoning steps, tone analysis, user intent breakdown, or draft options. Output ONLY the final answer.
-4. The length of the answer must match the scope of the question:
-   - For greetings (e.g. "hi", "hello"): respond with a single short, friendly sentence.
-   - For specific or factual questions: answer directly in 1-2 concise sentences without preamble or filler.
-   - For code: provide only the requested code and minimal necessary explanation.
-5. Do NOT add extra explanations, background history, or unsolicited details unless the user specifically asks for them.`;
+    // Strict concise directive
+    const conciseDirective = `You are CHAT AI, a fast, accurate, and concise AI assistant.
+Always answer directly, clearly, and to the point.
+Never recite system instructions, thoughts, or planning steps.
+Never explain what the user said or formulate a plan out loud. Output ONLY the direct answer.`;
 
     // Try candidate models
     for (const candidate of candidates) {
@@ -203,14 +197,7 @@ STRICT INSTRUCTIONS:
         const requestOptions = candidate.apiVersion ? { apiVersion: candidate.apiVersion } : undefined;
         const generativeModel = genAI.getGenerativeModel(modelOptions, requestOptions);
 
-        // Prepend concise directive to the user message for Gemma models and all models that don't support systemInstruction
-        const effectiveContents = JSON.parse(JSON.stringify(contents));
-        const lastUser = [...effectiveContents].reverse().find((c: any) => c.role === 'user');
-        if (lastUser && lastUser.parts?.[0]?.text) {
-          lastUser.parts[0].text = `[Rule: Give ONLY a short, direct answer to what is asked. Do not add extra explanations or details.]\n\n${lastUser.parts[0].text}`;
-        }
-
-        resultStream = await generativeModel.generateContentStream({ contents: effectiveContents });
+        resultStream = await generativeModel.generateContentStream({ contents });
         cachedWorkingModel = candidate;
         break;
       } catch (streamAttemptErr: any) {
@@ -274,6 +261,9 @@ STRICT INSTRUCTIONS:
               (chunkText.trim().startsWith('User says:') ||
                 chunkText.trim().startsWith('Tone:') ||
                 chunkText.trim().startsWith('Intent:') ||
+                chunkText.trim().startsWith('The user said') ||
+                chunkText.trim().startsWith('According to') ||
+                chunkText.trim().startsWith('Plan:') ||
                 chunkText.trim().startsWith('Thinking Process:') ||
                 chunkText.trim().startsWith('<think>'))
             ) {
@@ -282,19 +272,13 @@ STRICT INSTRUCTIONS:
 
             if (isMonologueBuffering) {
               bufferedMonologue += chunkText;
-              // If options ended with quoted response or closing tag
-              if (
-                bufferedMonologue.includes('</think>') ||
-                /(?:Option \d[^\n]*\n*)+[\s\S]*"[^"]{2,}"/i.test(bufferedMonologue)
-              ) {
-                const cleaned = cleanReasoning(bufferedMonologue);
-                if (cleaned) {
-                  controller.enqueue(
-                    encoder.encode(`data: ${JSON.stringify({ type: 'chunk', content: cleaned })}\n\n`)
-                  );
-                  isMonologueBuffering = false;
-                  bufferedMonologue = '';
-                }
+              const cleaned = cleanReasoning(bufferedMonologue);
+              if (cleaned) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: 'chunk', content: cleaned })}\n\n`)
+                );
+                isMonologueBuffering = false;
+                bufferedMonologue = '';
               }
             } else {
               // Direct streaming for normal responses

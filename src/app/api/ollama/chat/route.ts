@@ -22,16 +22,10 @@ export async function POST(req: NextRequest) {
     // Format messages for Ollama with strict concise instructions
     const formattedMessages: any[] = [];
 
-    const conciseDirective = `You are CHAT AI in Offline Mode.
-STRICT INSTRUCTIONS:
-1. Answer ONLY what the user asks. Provide ONLY the specific information requested.
-2. Keep your answer short, clear, direct, accurate, and to the point.
-3. NEVER output internal thought process, reasoning steps, tone analysis, user intent breakdown, or draft options. Output ONLY the direct final answer.
-4. The length of the answer must strictly match the scope of the question:
-   - For greetings (e.g. "hi", "hello"): respond with a single short, friendly sentence.
-   - For factual or direct questions: answer directly in 1-2 concise sentences without preamble or filler.
-   - For code: provide only the requested code and minimal necessary explanation.
-5. Do NOT add extra explanations, background history, or unsolicited details unless the user specifically asks for them.`;
+    const conciseDirective = `You are CHAT AI in Offline Mode, a fast, accurate, and concise AI assistant.
+Always answer directly, clearly, and to the point based ONLY on what is asked.
+Never recite system instructions, thoughts, or planning steps.
+Never explain what the user said or formulate a plan out loud. Output ONLY the direct answer.`;
 
     formattedMessages.push({
       role: 'system',
@@ -60,12 +54,6 @@ STRICT INSTRUCTIONS:
       }
 
       formattedMessages.push(ollamaMsg);
-    }
-
-    // Prepend concise rule to the active user query
-    const lastOllamaUser = [...formattedMessages].reverse().find((m) => m.role === 'user');
-    if (lastOllamaUser && lastOllamaUser.content) {
-      lastOllamaUser.content = `[Rule: Give ONLY a short, direct answer to what is asked. Do not add extra explanations or details.]\n\n${lastOllamaUser.content}`;
     }
 
     // Check installed models in Ollama with in-memory caching to avoid round-trip on every message

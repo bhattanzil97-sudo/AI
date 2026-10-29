@@ -1,6 +1,6 @@
 /**
  * Cleans any leaked internal reasoning, meta-analysis, tone breakdown,
- * or draft options from assistant outputs across Online and Offline models.
+ * monologue planning, or draft options from assistant outputs across Online and Offline models.
  */
 export function cleanReasoning(text: string): string {
   if (!text) return '';
@@ -14,13 +14,19 @@ export function cleanReasoning(text: string): string {
 
   // 2. Remove "Thinking Process: ..." blocks
   cleaned = cleaned.replace(
-    /^Thinking Process:[\s\S]*?(?:Final Answer:|Answer:|Conclusion:)\s*/i,
+    /^Thinking Process:[\s\S]*?(?:Final Answer:|Answer:|Conclusion:|\n\n)/gi,
     ''
   );
-  cleaned = cleaned.replace(/^Thinking Process:[\s\S]*?\n\n(?=[^\n])/i, '');
   cleaned = cleaned.replace(/^(?:Final Answer:|Answer:|Conclusion:)\s*/i, '');
 
-  // 3. Remove "User says: ... Tone: ... Intent: ... Option 1/2/3" scratchpads
+  // 3. Remove "The user said... According to the system instructions... Plan:..." monologue
+  cleaned = cleaned.replace(
+    /^(?:The user said|According to the system instructions)[\s\S]*?(?:Plan:[^\n\.]*[\.\n]?\s*)/i,
+    ''
+  );
+  cleaned = cleaned.replace(/^Plan:[^\n\.]*[\.\n]?\s*/i, '');
+
+  // 4. Remove "User says: ... Tone: ... Intent: ... Option 1/2/3" scratchpads
   if (/^(?:User says:|Tone:|Intent:|Role:)/im.test(cleaned)) {
     // If there is an Option block, grab the final selected answer after the options
     const optionMatch = cleaned.match(/(?:Option \d[^\n]*\n*)+([\s\S]*)$/i);
@@ -46,12 +52,12 @@ export function cleanReasoning(text: string): string {
     }
   }
 
-  // 4. Strip wrapping quotes if the whole message was returned inside quotes
+  // 5. Strip wrapping quotes if the whole message was returned inside quotes
   cleaned = cleaned.trim();
   if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 2) {
     cleaned = cleaned.substring(1, cleaned.length - 1).trim();
   }
 
-  return cleaned;
+  return cleaned.trim();
 }
 
