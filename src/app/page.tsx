@@ -6,6 +6,7 @@ import { Header } from '@/components/Header';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { ChatMessage } from '@/components/ChatMessage';
 import { ChatInput } from '@/components/ChatInput';
+import { OfflineModelGatekeeper } from '@/components/OfflineModelGatekeeper';
 import { OfflineDiagnostics } from '@/components/OfflineDiagnostics';
 import { SettingsModal } from '@/components/SettingsModal';
 import { HelpModal } from '@/components/HelpModal';
@@ -676,11 +677,15 @@ export default function ChatAIPage() {
             <>
               {showOfflineDiagnostics ? (
                 <div className="flex-1 p-4 flex items-center justify-center">
-                  <OfflineDiagnostics
+                  <OfflineModelGatekeeper
                     status={ollamaStatus}
                     onRefresh={() => checkOllamaStatus()}
                     onSwitchToOnline={() => handleToggleMode('online')}
-                    isChecking={isCheckingOllama}
+                    onModelReady={(modelName) => {
+                      setActiveModel(modelName);
+                      storage.saveSettings({ offlineModel: modelName });
+                      checkOllamaStatus();
+                    }}
                   />
                 </div>
               ) : (
@@ -695,11 +700,15 @@ export default function ChatAIPage() {
             <div className="flex-1 py-4">
               {showOfflineDiagnostics && (
                 <div className="px-4 mb-4">
-                  <OfflineDiagnostics
+                  <OfflineModelGatekeeper
                     status={ollamaStatus}
                     onRefresh={() => checkOllamaStatus()}
                     onSwitchToOnline={() => handleToggleMode('online')}
-                    isChecking={isCheckingOllama}
+                    onModelReady={(modelName) => {
+                      setActiveModel(modelName);
+                      storage.saveSettings({ offlineModel: modelName });
+                      checkOllamaStatus();
+                    }}
                   />
                 </div>
               )}
@@ -734,6 +743,7 @@ export default function ChatAIPage() {
           isStreaming={isStreaming}
           onStopStreaming={handleStopStreaming}
           speechLanguage={settings.speechLanguage}
+          disabled={showOfflineDiagnostics}
         />
       </div>
 

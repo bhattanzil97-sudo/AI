@@ -130,3 +130,52 @@ export const ONLINE_MODELS = [
   },
 ];
 
+export interface CuratedOfflineModel {
+  id: string;
+  name: string;
+  size: string;
+  ramRequired: string;
+  description: string;
+  badge?: string;
+  speed: string;
+}
+
+export const RECOMMENDED_OFFLINE_MODELS: CuratedOfflineModel[] = [
+  {
+    id: 'qwen2.5:0.5b',
+    name: 'Qwen 2.5 (0.5B)',
+    size: '398 MB',
+    ramRequired: '1 GB RAM',
+    description: 'Ultra-lightweight and fastest. Designed specifically for mobile phones and low-resource devices.',
+    badge: 'Mobile Optimized',
+    speed: 'Instant',
+  },
+  {
+    id: 'llama3.2:1b',
+    name: 'Llama 3.2 (1B)',
+    size: '1.3 GB',
+    ramRequired: '2 GB RAM',
+    description: "Meta's official compact edge model. High intelligence with very low latency.",
+    badge: 'Recommended',
+    speed: 'Ultra Fast',
+  },
+  {
+    id: 'qwen3.5:4b',
+    name: 'Qwen 3.5 (4B)',
+    size: '2.6 GB',
+    ramRequired: '4 GB RAM',
+    description: 'High capability model for deep reasoning, concise answers, and code assistance.',
+    badge: 'High Accuracy',
+    speed: 'Fast',
+  },
+  {
+    id: 'gemma2:2b',
+    name: 'Gemma 2 (2B)',
+    size: '1.6 GB',
+    ramRequired: '3 GB RAM',
+    description: "Google DeepMind's compact model with strong factual accuracy.",
+    badge: 'Google AI',
+    speed: 'Very Fast',
+  },
+];
+

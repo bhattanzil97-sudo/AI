@@ -247,7 +247,9 @@ export function ChatInput({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              isListening
+              disabled
+                ? 'Offline model required. Please download a model above to begin chatting...'
+                : isListening
                 ? 'Listening... Speak now...'
                 : 'Message CHAT AI... (Press Enter to send, Shift+Enter for new line)'
             }
