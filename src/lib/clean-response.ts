@@ -33,9 +33,10 @@ export function cleanReasoning(text: string): string {
       cleaned = afterOptions;
     } else {
       // Look for the last quoted block
-      const matches = [...cleaned.matchAll(/"([^"]{2,})"/g)];
-      if (matches.length > 0) {
-        cleaned = matches[matches.length - 1][1].trim();
+      const matches = cleaned.match(/"([^"]{2,})"/g);
+      if (matches && matches.length > 0) {
+        const lastQuoted = matches[matches.length - 1];
+        cleaned = lastQuoted.replace(/^"|"$/g, '').trim();
       }
     }
   }
@@ -45,8 +46,8 @@ export function cleanReasoning(text: string): string {
   cleaned = cleaned.replace(/^Respond with[\s\S]*?(?:greeting\.|answer\.)\s*/i, '');
 
   // 6. If duplicate greeting occurred (e.g. "Hello! ... Hello! ...")
-  const dupMatch = cleaned.match(/^"([^"]+)"\s*\1$/s);
-  if (dupMatch) {
+  const dupMatch = cleaned.match(/^"([^"]+)"\s*([\s\S]*)$/);
+  if (dupMatch && dupMatch[1] === dupMatch[2].trim()) {
     cleaned = dupMatch[1];
   }
 

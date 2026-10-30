@@ -17,7 +17,7 @@ import {
   RefreshCw,
   AlertCircle,
 } from 'lucide-react';
-import { AppSettings, OllamaModel, ONLINE_MODELS } from '@/types/chat';
+import { AppSettings, DEFAULT_SETTINGS, OllamaModel, ONLINE_MODELS } from '@/types/chat';
 import { voiceService, isSpeechRecognitionSupported, isSpeechSynthesisSupported } from '@/lib/speech';
 
 interface SettingsModalProps {
